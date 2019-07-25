@@ -3,9 +3,22 @@ local sfind = string.find
 local M = {}
 local mt = {}
 
+local function gen_patt_token_key(patt_token)
+    local key
+    local ttype = patt_token.ttype
+    if not patt_token.any then
+        key = string.format("[%s]:%s", ttype, patt_token.value)
+    else
+        local ref = patt_token.ref
+        key = string.format("[*]:%s%s", ttype, ref and ref or "") 
+    end
+    return key
+end
+
 
 function mt:parser_line(l)
-    local cap = line.capture_line(l)
+    local lt = type(l)
+    local cap = lt == "string" and line.capture_line(l) or l
     local  len = #cap
     local  patt = {}
     local map = {}
@@ -28,30 +41,28 @@ function mt:parser_line(l)
                     shape = false,
                     any = false,
                     ref = false,
-                    prev = false,
-                    next = false,
                 }
             else
                 local first_patt_token = patt[entry.first]
                 first_patt_token.any = true
                 patt_token = {
                     value = token,
+                    ttype = token_type,
                     shape = token ~= first_patt_token.value,
                     any = true,
                     ref = entry.first,
-                    prev = false,
-                    next = false,
                 }
             end
         else
             patt_token = {
                 value = token,
                 ttype = token_type,
-                prev = false,
-                next = false,
             }
         end
-        patt_token.line_idx = line_idx
+
+        patt_token.key = gen_patt_token_key(patt_token)
+        patt_token.child = false
+        patt_token.count = 1
         patt[#patt+1] = patt_token
     end
     return patt
@@ -60,122 +71,70 @@ end
 
 function mt:insert_patt(patt)
     local root = self.root
-    local parent_token = false
-    for i, patt_token in ipairs(patt) do
-        local layer = root[i]
-        if not layer then
-            layer = {
-                normal = {},
-                anys = {},
-            }
-            root[i] = layer
+    local parent_patt_token = false
+    for i,patt_token in ipairs(patt) do
+        local cur_layer = root[i]
+        if not cur_layer then
+            cur_layer = {}
+            root[i] = cur_layer
+        end
+        local cur_key = patt_token.key
+        local layer_token = cur_layer[cur_key]
+        if not layer_token then
+            layer_token = patt_token
+            layer_token.child = {}
+        else
+            layer_token.count = layer_token.count + 1
         end
 
-        local is_any = patt_token.any
-        if is_any then
-            table.insert(layer.anys, patt_token)
-        else
-            table.insert(layer.normal, patt_token)
+        if parent_patt_token then
+            local child = parent_patt_token.child
+            local ref_count = child[cur_key] or 0
+            child[cur_key] = ref_count + 1
         end
-        if parent_token then
-            parent_token.next = patt_token
-            patt_token.prev = parent_token
-        end
-        parent_token = patt_token
     end
 end
+
 
 function mt:insert_line(line)
     local patt = self:parser_line(line)
     self:insert_patt(patt)
 end
 
-local function gen_complete_str(complete_patt, final_node)
-    local t = {}
-    local node = final_node
-    while node do
-        local value = node.value
-        local any = node.any
-        local ref = node.ref
-        if any then
-            assert(ref)
-            local cv = complete_patt[ref].value
-            t[#t+1] = cv
-        else
-            t[#t+1] = value
-        end
-        node = node.next
-    end
-    return table.concat(t, " ")
-end
 
-
-local function _search(self, complete_patt, layer_idx, result)
-    local root = self.root
-    local layer = root[layer_idx]
-    if not layer then
+local function _search_complete(layer_token, search_patt, patt_index, result)
+    if not layer_token then
         return
     end
-
-    local cur_patt = complete_patt[layer_idx]
-    local cur_value = cur_patt.value
-    local isend_patt = #complete_patt == layer_idx
-    local normal = layer.normal
-    local anys = layer.anys
-
-    -- find result from normal
-    for i,v in ipairs(normal) do
-        local value = v.value
-        if sfind(value, cur_value) then
-            if isend_patt then
-                result[#result+1] = gen_complete_str(complete_patt, v)
-            else
-                _search(self, complete_patt, layer_idx+1, result)
-            end
-        end
-    end
-
-    -- find result from anys
-    for i,v in ipairs(anys) do
-        if isend_patt then
-            result[#result+1] = gen_complete_str(complete_patt, v)
-        else
-            _search(self, complete_patt, layer_idx+1, result)
-        end
-    end
+    local cur_patt = search_patt[patt_index]
 end
 
 
-function mt:search(half_line, complete_idx)
-    local  cap = line.capture_line(half_line)
-    complete_idx = complete_idx or #cap
-    local complete_patt = {}
+function mt:search(complete_line, complete_index)
+    local cap = line.capture_line(complete_line)
+    local search_token = {}
     local len = #cap
     for i=1, len, 3 do
-        local line_idx = cap[i]
-        local token_type = cap[i+1]
-        local token = cap[i+2]
-        local end_idx = #token + line_idx - 1
-        -- in token
-        if complete_idx >= line_idx and complete_idx < end_idx then
-            return false
-        end
-        if end_idx <= complete_idx then
-            complete_patt[#complete_patt+1] = {
-                value = token,
-                ttype = token_type,
-            }
-        else
+        local begin_index = cap[i]
+        local ttype = cap[2]
+        local token = cap[2]
+        local end_index = begin_index + #token - 1
+        if complete_index >= begin_index and complete_index < end_index then
             break
         end
+
+        if begin_index < complete_index then
+            table.insert(search_token, begin_index)
+            table.insert(search_token, ttype)
+            table.insert(search_token, token)
+        end
     end
 
-    if #complete_patt == 0 then
-        return false
-    end
-
+    local search_patt = self:parser_line(search_token)
     local result = {}
-    _search(self, complete_patt, layer_idx, result)
+
+    local first_layer_token = search_patt[1] and self.root[1][search_patt[1].key] or false
+    _search_complete(first_layer_token, search_patt, patt_index, result)
     return result
 end
 
@@ -183,6 +142,7 @@ end
 function M.new_context()
     local raw = {
         root = {},
+        token_map = {},
     }
     return setmetatable(raw, {__index = mt})
 end

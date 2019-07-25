@@ -80,7 +80,7 @@ lline_capture_line(lua_State* L) {
 
     lua_newtable(L);
     int idx = 0;
-    for(i=sc; i<len; i++) {
+    for(i=0; i<len; i++) {
         char c = line[i];
         char ct = ctype(c);
         switch(ct) {
