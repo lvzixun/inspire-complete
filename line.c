@@ -78,18 +78,19 @@ lline_capture_line(lua_State* L) {
         return 0;
     }
 
+    int sc = read_type(line, 0, len, 'S'); // pass begin space
     lua_newtable(L);
     int idx = 0;
-    for(i=0; i<len; i++) {
+    for(i=sc; i<len; i++) {
         char c = line[i];
         char ct = ctype(c);
         switch(ct) {
             case 'A': {
                 read_count = read_id(line, i, len);
             }break;
-            case 'S': {  // pass space
-                continue;
-            }break;
+            // case 'S': {  // pass space
+            //     continue;
+            // }break;
             // case 'C': {
             //     read_count = read_string(line, i, len);
             //     lua_pushfstring(L, "%c", ct);
