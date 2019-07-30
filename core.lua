@@ -3,16 +3,23 @@ local print_r = require "print_r"
 local M = {}
 local mt = {}
 
-local function gen_patt_token_key(patt_token)
+local function gen_patt_token_key(patt_token, prefix)
     local key
     local ttype = patt_token.ttype
     if not patt_token.any then
-        key = string.format("<%s>:%s", ttype, patt_token.value)
+        if ttype == "S" then
+            key = "<S>"
+        elseif ttype == "N" then
+            key = "<N>"
+        else
+            key = string.format("<%s>:%s", ttype, patt_token.value)
+        end
     else
         local ref = patt_token.ref
         key = string.format("<*>:%s%s", ttype, ref and ref or "")
     end
-    return key
+    prefix = prefix or ""
+    return prefix .. key
 end
 
 
@@ -45,7 +52,6 @@ function mt:parser_line(l)
             else
                 local first_patt_token = patt[entry.first]
                 first_patt_token.any = true
-                first_patt_token.key = gen_patt_token_key(first_patt_token)
                 patt_token = {
                     value = token,
                     ttype = token_type,
@@ -61,11 +67,17 @@ function mt:parser_line(l)
             }
         end
 
-        patt_token.key = gen_patt_token_key(patt_token)
         patt_token.child = false
         patt_token.count = 1
         patt[patt_index] = patt_token
         patt_index = patt_index + 1
+    end
+
+    local prefix = ""
+    for i, patt_token in ipairs(patt) do
+        local k = gen_patt_token_key(patt_token, prefix)
+        patt_token.key = k
+        prefix = k
     end
     return patt
 end
@@ -102,6 +114,10 @@ end
 
 
 function mt:insert_line(line)
+    if string.match(line, "^%s*$") then
+        return
+    end
+
     local patt = self:parser_line(line)
     -- print("insert_line", line)
     -- print_r(patt)
@@ -115,7 +131,7 @@ end
 
 local function _search_layer_by_value(self, cur_layer_index, search_token)
     local cur_layer = self.root[cur_layer_index]
-    if cur_layer then
+    if not cur_layer then
         return
     end
 
@@ -123,7 +139,7 @@ local function _search_layer_by_value(self, cur_layer_index, search_token)
     for k, layer_token in pairs(cur_layer) do
         local search_value = search_token.value
         if layer_token.ttype == search_token.ttype and _substr(layer_token.value, search_value) then
-            result[#result] = layer_token
+            result[#result+1] = layer_token
         end
     end
     return result
@@ -131,32 +147,35 @@ end
 
 
 local function gen_complete(self, cur_layer_index, layer_token, search_token_list, result)
-    local function _gen_cpl_str(self, cur_layer_index, layer_token, search_token_list, buf)
+    local function _gen_cpl_str(self, cur_layer_index, layer_token, search_token_list, buf, result)
         local is_any = layer_token.any
         local ttype = layer_token.ttype
         local child = layer_token.child
-        local has_child = not not next(child)
         local new_value
         if not is_any then
             new_value = layer_token.value
         else
-            local ref = layer_token.ref or #search_token_list
-            new_value = search_token_list[ref].value
+            local ref = layer_token.ref or cur_layer_index
+            local ref_token = search_token_list[ref]
+            new_value = ref_token and ref_token.value or layer_token.value
         end
-        buf[#buf+1] = new_value
+        local buf_index = #buf+1
+        buf[buf_index] = new_value
+        local is_final = true
         for k, ref_count in pairs(child) do
-            local next_layer_token = self.root[cur_layer_index][k]
+            local next_layer_token = self.root[cur_layer_index+1][k]
             if ref_count <= -2 or ref_count >= 2 then
-                _gen_cpl_str(self, cur_layer_index+1, next_layer_token, search_token_list, buf)
+                is_final = false
+                _gen_cpl_str(self, cur_layer_index+1, next_layer_token, search_token_list, buf, result)
             end
         end
-        return table.concat(buf), buf[1]
+        if is_final then
+            result[#result+1] = table.concat(buf)
+        end
+        assert(#buf == buf_index)
+        buf[buf_index] = nil
     end
-    local longest, shortest = _gen_cpl_str(self, cur_layer_index, layer_token, search_token_list, {})
-    result[#result+1] = longest
-    if longest ~= shortest then
-        result[#result+1] = shortest
-    end
+    _gen_cpl_str(self, cur_layer_index, layer_token, search_token_list, {}, result)
 end
 
 
@@ -169,49 +188,65 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
     -- is final match
     local cur_search_token = search_token_list[search_token_index]
     if not cur_search_token then
-        gen_complete(layer_token, search_token_list, result)
+        gen_complete(self, cur_layer_index, layer_token, search_token_list, result)
         return
     end
 
     local search_token_key = cur_search_token.key
     local is_last_search_token = #search_token_list == search_token_index
+    local full_match_list = {}
+    local last_match_list = {}
+    local any_match_list = {}
     for k, ref_count in pairs(layer_token.child) do
         local next_layer_token = next_layer[k]
         -- full match
         if search_token_key == k then
-            _complete(self, cur_layer_index+1, next_layer_token, search_token_list, search_token_index+1, result)
+            full_match_list[#full_match_list+1] = next_layer_token
 
         -- last match
         elseif ref_count > 0 and is_last_search_token and  _substr(next_layer_token.value, cur_search_token.value) then
-            _complete(self, cur_layer_index+1, next_layer_token, search_token_list, search_token_index+1, result)
+            last_match_list[#full_match_list+1] = next_layer_token
         
         -- any match
-        elseif ref_count <= -3 then
-            _complete(self, cur_layer_index+1, next_layer_token, search_token_list, search_token_index+1, result)     
+        elseif ref_count <= -2 then
+            any_match_list[#full_match_list+1] = next_layer_token
         end
     end
+
+    local function _complete_list(match_list)
+        for i,next_layer_token in ipairs(match_list) do
+            _complete(self, cur_layer_index+1, next_layer_token, search_token_list, search_token_index+1, result)
+        end
+    end
+    _complete_list(full_match_list)
+    _complete_list(last_match_list)
+    _complete_list(any_match_list)
 end
 
 
-function mt:search(complete_line, complete_index)
+function mt:complete_at(complete_line, complete_index)
+    complete_index = complete_index or #complete_line
     local cap = line.capture_line(complete_line)
     local search_token_list = {}
     local len = #cap
+    local prefix = ""
     for i=1, len, 3 do
         local begin_index = cap[i]
-        local ttype = cap[2]
-        local token = cap[2]
+        local ttype = cap[i+1]
+        local token = cap[i+2]
         local end_index = begin_index + #token - 1
         if complete_index >= begin_index and complete_index < end_index then
             break
         end
 
-        if begin_index < complete_index then
+        if end_index <= complete_index then
             local search_token = {
                 value = token,
                 ttype = ttype,
             }
-            search_token.key = gen_patt_token_key(search_token)
+            local k = gen_patt_token_key(search_token, prefix)
+            search_token.key = k
+            prefix = k
             search_token_list[#search_token_list+1] = search_token
         end
     end
@@ -228,7 +263,7 @@ function mt:search(complete_line, complete_index)
     table.sort(first_layer_tokens, function (a, b) return a.count > b.count end)
     local result = {}
     for i, layer_token in ipairs(first_layer_tokens) do
-        _complete(layer_token, search_token_list, 2, result)
+        _complete(self, 1, layer_token, search_token_list, 2, result)
     end
     return result
 end
