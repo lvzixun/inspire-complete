@@ -3,7 +3,7 @@ local print_r = require "print_r"
 local M = {}
 local mt = {}
 
-local function gen_patt_token_key(patt_token, prefix)
+local function gen_patt_token_key(patt_token)
     local key
     local ttype = patt_token.ttype
     if not patt_token.any then
@@ -12,14 +12,15 @@ local function gen_patt_token_key(patt_token, prefix)
         elseif ttype == "N" then
             key = "<N>"
         else
-            key = string.format("<%s>:%s", ttype, patt_token.value)
+            key = string.format("<%s:%s>", ttype, patt_token.value)
         end
     else
         local ref = patt_token.ref
-        key = string.format("<*>:%s%s", ttype, ref and ref or "")
+        key = string.format("<*%s:%s>", ttype, ref and ref or "")
     end
-    prefix = prefix or ""
-    return prefix .. key
+    -- prefix = prefix or ""
+    -- return prefix .. key
+    return key
 end
 
 
@@ -67,17 +68,21 @@ function mt:parser_line(l)
             }
         end
 
+        patt_token.path = {}
         patt_token.child = false
         patt_token.count = 1
         patt[patt_index] = patt_token
         patt_index = patt_index + 1
     end
 
-    local prefix = ""
     for i, patt_token in ipairs(patt) do
-        local k = gen_patt_token_key(patt_token, prefix)
+        local k = gen_patt_token_key(patt_token)
+        local path = patt_token.path
         patt_token.key = k
-        prefix = k
+        for j=1, i do
+            local key = patt[j].key
+            path[j] = key
+        end
     end
     return patt
 end
@@ -119,8 +124,6 @@ function mt:insert_line(line)
     end
 
     local patt = self:parser_line(line)
-    -- print("insert_line", line)
-    -- print_r(patt)
     self:insert_patt(patt)
 end
 
@@ -147,7 +150,19 @@ end
 
 
 local function gen_complete(self, cur_layer_index, layer_token, search_token_list, result)
-    local function _gen_cpl_str(self, cur_layer_index, layer_token, search_token_list, buf, result)
+    local function check_path(p1, p2)
+        if #p2 >= #p1 then
+            for i,v in ipairs(p1) do
+                if p2[i] ~= v then
+                    return false
+                end
+            end
+            return true
+        end
+        return false
+    end
+
+    local function _gen_cpl_str(self, root_layer_path, cur_layer_index, layer_token, search_token_list, buf, result)
         local is_any = layer_token.any
         local ttype = layer_token.ttype
         local child = layer_token.child
@@ -164,9 +179,10 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
         local is_final = true
         for k, ref_count in pairs(child) do
             local next_layer_token = self.root[cur_layer_index+1][k]
-            if ref_count <= -2 or ref_count >= 2 then
+            local correct_path = check_path(root_layer_path, next_layer_token.path)
+            if correct_path and (ref_count <= -2 or ref_count >= 2) then
                 is_final = false
-                _gen_cpl_str(self, cur_layer_index+1, next_layer_token, search_token_list, buf, result)
+                _gen_cpl_str(self, root_layer_path, cur_layer_index+1, next_layer_token, search_token_list, buf, result)
             end
         end
         if is_final then
@@ -175,7 +191,8 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
         assert(#buf == buf_index)
         buf[buf_index] = nil
     end
-    _gen_cpl_str(self, cur_layer_index, layer_token, search_token_list, {}, result)
+    local root_layer_path = layer_token.path
+    _gen_cpl_str(self, root_layer_path, cur_layer_index, layer_token, search_token_list, {}, result)
 end
 
 
@@ -197,6 +214,7 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
     local full_match_list = {}
     local last_match_list = {}
     local any_match_list = {}
+    local ttype_match_list = {}
     for k, ref_count in pairs(layer_token.child) do
         local next_layer_token = next_layer[k]
         -- full match
@@ -210,6 +228,11 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
         -- any match
         elseif ref_count <= -2 then
             any_match_list[#full_match_list+1] = next_layer_token
+
+        -- type match
+        elseif cur_search_token.ttype == next_layer_token.ttype then
+            print("next_layer_token!!", next_layer_token.value)
+            ttype_match_list[#ttype_match_list+1] = next_layer_token
         end
     end
 
@@ -221,6 +244,7 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
     _complete_list(full_match_list)
     _complete_list(last_match_list)
     _complete_list(any_match_list)
+    _complete_list(ttype_match_list)
 end
 
 
