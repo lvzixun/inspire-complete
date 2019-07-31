@@ -1,6 +1,11 @@
 local print_r = require "print_r"
 local core = require "core"
 
+-- local source = [[
+-- local dd = test.group[1].value
+-- local self = test.group[2].value
+-- ]]
+
 local source = [[
 for i,v in ipairs(table_name) do
     print(i,v)
@@ -9,12 +14,7 @@ end
 for i,v in ipairs(table_name) do
     print(i,v)
 end
-
-local aa = require "ui.aa"
-local bb = require "ui.bb"
-
 ]]
-
 
 
 local ctx = core.new_context()
@@ -40,5 +40,7 @@ local function test_complete(complete_line)
 end
 
 
--- test_complete("f")
-test_complete("local")
+test_complete("for ")
+-- test_complete("local cc")
+-- test_complete("uns")
+-- test_complete("local s")
