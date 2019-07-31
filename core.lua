@@ -89,6 +89,25 @@ end
 
 
 function mt:insert_patt(patt)
+    local function insert_paths(paths, path)
+        for i,v in ipairs(path) do
+            local c = paths[i]
+            local tc = type(c)
+            if tc =="table" then
+                c[v] = (c[v] or 0) + 1
+            elseif tc == "string" then
+                if c ~= v then
+                    c = {[v]=1, [c]=1}
+                end
+            elseif tc == "nil" then
+                c = v
+            else
+                assert(false)
+            end
+            paths[i] = c
+        end
+    end
+
     local root = self.root
     local parent_layer_token = false
     for i,patt_token in ipairs(patt) do
@@ -99,13 +118,17 @@ function mt:insert_patt(patt)
         end
         local cur_key = patt_token.key
         local layer_token = cur_layer[cur_key]
+        local path = patt_token.path
+        patt_token.path = nil
         if not layer_token then
             layer_token = patt_token
+            layer_token.paths = {}
             layer_token.child = {}
             cur_layer[cur_key] = layer_token
         else
             layer_token.count = layer_token.count + 1
         end
+        insert_paths(layer_token.paths, path)
 
         if parent_layer_token then
             local child = parent_layer_token.child
@@ -149,11 +172,16 @@ local function _search_layer_by_value(self, cur_layer_index, search_token)
 end
 
 
-local function gen_complete(self, cur_layer_index, layer_token, search_token_list, result)
+local function gen_complete(self, cur_layer_index, layer_token, search_token_list, root_layer_path, result)
     local function check_path(p1, p2)
         if #p2 >= #p1 then
             for i,v in ipairs(p1) do
-                if p2[i] ~= v then
+                local v2 = p2[i]
+                local tv2 = type(v2)
+                if tv2 == "table" and not v2[v] then
+                    return false
+                end
+                if tv2 == "string" and v2 ~= v then
                     return false
                 end
             end
@@ -179,8 +207,8 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
         local is_final = true
         for k, ref_count in pairs(child) do
             local next_layer_token = self.root[cur_layer_index+1][k]
-            local correct_path = check_path(root_layer_path, next_layer_token.path)
-            if correct_path and (ref_count <= -2 or ref_count >= 2) then
+            local correct_path = check_path(root_layer_path, next_layer_token.paths)
+            if correct_path and (ref_count <= -1 or ref_count >= 1) then
                 is_final = false
                 _gen_cpl_str(self, root_layer_path, cur_layer_index+1, next_layer_token, search_token_list, buf, result)
             end
@@ -191,21 +219,24 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
         assert(#buf == buf_index)
         buf[buf_index] = nil
     end
-    local root_layer_path = layer_token.path
     _gen_cpl_str(self, root_layer_path, cur_layer_index, layer_token, search_token_list, {}, result)
 end
 
 
-local function _complete(self, cur_layer_index, layer_token, search_token_list, search_token_index, result)
+local function _complete(self, cur_layer_index, layer_token, search_token_list, search_token_index, root_layer_path, result)
+    local cur_root_layer_path_index = #root_layer_path+1
+    root_layer_path[cur_root_layer_path_index] = layer_token.key
     local next_layer = self.root[cur_layer_index+1]
     if not next_layer or not layer_token then
+        root_layer_path[cur_root_layer_path_index] = nil
         return
     end
 
     -- is final match
     local cur_search_token = search_token_list[search_token_index]
     if not cur_search_token then
-        gen_complete(self, cur_layer_index, layer_token, search_token_list, result)
+        gen_complete(self, cur_layer_index, layer_token, search_token_list, root_layer_path, result)
+        root_layer_path[cur_root_layer_path_index] = nil
         return
     end
 
@@ -231,20 +262,20 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
 
         -- type match
         elseif cur_search_token.ttype == next_layer_token.ttype then
-            print("next_layer_token!!", next_layer_token.value)
             ttype_match_list[#ttype_match_list+1] = next_layer_token
         end
     end
 
     local function _complete_list(match_list)
         for i,next_layer_token in ipairs(match_list) do
-            _complete(self, cur_layer_index+1, next_layer_token, search_token_list, search_token_index+1, result)
+            _complete(self, cur_layer_index+1, next_layer_token, search_token_list, search_token_index+1, root_layer_path, result)
         end
     end
     _complete_list(full_match_list)
     _complete_list(last_match_list)
     _complete_list(any_match_list)
     _complete_list(ttype_match_list)
+    root_layer_path[cur_root_layer_path_index] = nil
 end
 
 
@@ -287,7 +318,7 @@ function mt:complete_at(complete_line, complete_index)
     table.sort(first_layer_tokens, function (a, b) return a.count > b.count end)
     local result = {}
     for i, layer_token in ipairs(first_layer_tokens) do
-        _complete(self, 1, layer_token, search_token_list, 2, result)
+        _complete(self, 1, layer_token, search_token_list, 2, {}, result)
     end
     return result
 end
