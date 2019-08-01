@@ -68,5 +68,6 @@ test_complete("for")
 test_complete("local s")
 test_complete("uns")
 test_complete("local func")
+test_complete("local kiss")
 -- test_complete("local sss", 4)
 
