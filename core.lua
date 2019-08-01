@@ -22,7 +22,7 @@ local function gen_patt_token_key(patt_token)
 end
 
 
-function mt:parser_line(l)
+local function parser_line(self, l)
     local cap = line.capture_line(l)
     local  len = #cap
     local  patt = {}
@@ -86,7 +86,7 @@ function mt:parser_line(l)
 end
 
 
-function mt:insert_patt(patt)
+local function insert_patt(self, patt)
     local function insert_paths(paths, path)
         for i,v in ipairs(path) do
             local c = paths[i]
@@ -141,14 +141,64 @@ function mt:insert_patt(patt)
 end
 
 
+local function delete_patt(self, patt, del_count)
+    local function delete_paths(paths, path, del_count)
+        assert(#paths == #path)
+        for i, v in ipairs(path) do
+            local c = paths[i]
+            local tc = type(c)
+            if tc == "table" then
+                c[v] = c[v] - del_count
+                assert(c[v]>=0)
+            elseif tc == "string" then
+                paths[i] = false
+            else
+                error("invalid path type:" .. tc)
+            end
+        end
+    end
+
+    local root = self.root
+    local parent_layer_token = false
+    for i,patt_token in ipairs(patt) do
+        local cur_layer = root[i]
+        local key = patt_token.key
+        local layer_token = cur_layer[key]
+        layer_token.count = layer_token.count - del_count
+        delete_paths(layer_token.paths, patt_token.path, del_count)
+        if layer_token.count == 0 then
+            cur_layer[key] = nil
+        end
+        if parent_layer_token then
+            local ref_count = parent_layer_token.child[key]
+            ref_count = ref_count-del_count
+            assert(ref_count >= 0)
+            parent_layer_token.child[key] = ref_count ~= 0 and ref_count or nil
+        end
+        parent_layer_token = layer_token
+    end
+end
+
+
 local function insert_line(self, line)
     if string.match(line, "^%s*$") then
         return
     end
 
-    local patt = self:parser_line(line)
-    self:insert_patt(patt)
+    local patt = parser_line(self, line)
+    insert_patt(self, patt)
 end
+
+
+local function delete_line(self, line, del_count)
+    if string.match(line, "^%s*$") then
+        return
+    end
+
+    local patt = parser_line(self, line)
+    delete_patt(self, patt, del_count)
+end
+
 
 local function _substr(s, sub_s)
     return not not string.find(s, sub_s, 1, true)
@@ -398,29 +448,74 @@ local function complete_at(self, complete_line, complete_index)
 end
 
 
-function mt:load(source)
-    self.root = {}
-    self.file_lines = {}
-    local file_lines = self.file_lines
+local function resolve_diff(self, source, complete_lineidx)
+    local lines_map = self.lines_map
+    local new_lines = {}
+    local new_lines_map = {}
+    local idx = 1
     for line in string.gmatch(source, "[^\r\n]+") do
-        insert_line(self, line)
-        file_lines[#file_lines+1] = line
+        local v = complete_lineidx == idx and "" or line
+        new_lines[idx] = v
+        idx = idx + 1
+        new_lines_map[v] = (new_lines_map[v] or 0)+1
+    end
+
+    local modify_count = 0
+    local add_lines_map = {}
+    local del_lines_map = {}
+    for k,v in pairs(new_lines_map) do
+        local ov = lines_map[k]
+        if not ov then
+            modify_count = modify_count+1
+            add_lines_map[k] = v
+        elseif ov > v then
+            modify_count = modify_count+1
+            del_lines_map[k] = ov-v
+        elseif ov < v then
+            modify_count = modify_count+1
+            add_lines_map[k] = v-ov
+        end
+        lines_map[k] = nil
+    end
+    for k,v in pairs(lines_map) do
+        assert(del_lines_map[k] == nil)
+        modify_count = modify_count+1
+        del_lines_map[k] = v
+    end
+
+    local total_count = #self.file_lines
+    self.lines_map = new_lines_map
+    self.file_lines = new_lines
+    -- full source insert when modify_count beyond 30%
+    if modify_count >= total_count * 0.3 then
+        self.root = {}
+        for i,v in ipairs(new_lines) do
+            insert_line(self, v)
+        end
+        return
+    end
+
+    -- print("############ del_lines_map ############")
+    -- print_r(del_lines_map)
+
+    -- print("############ add_lines_map ############")
+    -- print_r(add_lines_map)
+
+    for k,v in pairs(del_lines_map) do
+        delete_line(self, k, v)
+    end
+    for k,v in pairs(add_lines_map) do
+        for i=1,v do
+            insert_line(self, k)
+        end
     end
 end
 
-function mt:insert_line(line, idx)
-    idx = idx or #self.file_lines+1
-    table.insert(self.file_lines, idx, line)
-    insert_line(self, line)
-end
-
--- todo it!!!
--- function mt:remove_line(line, idx)
--- end
 
 local max_up_lines = 32
 local max_complete_count = 8
-function mt:complete_at(complete_line, complete_index, line_idx)
+function mt:complete_at(source, complete_line, complete_index, complete_lineidx)
+    resolve_diff(self, source, line_idx)
     local result = false
     local result_map = {}
     if line_idx then
@@ -469,12 +564,17 @@ function mt:complete_at(complete_line, complete_index, line_idx)
 end
 
 
-function M.new_context()
+function M.new_context(source)
     local raw = {
         root = {},
         file_lines = {},
+        lines_map = {},
     }
-    return setmetatable(raw, {__index = mt})
+    local obj = setmetatable(raw, {__index = mt})
+    if source then
+        resolve_diff(obj, source)
+    end
+    return obj
 end
 
 
