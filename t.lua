@@ -1,10 +1,6 @@
 local print_r = require "print_r"
 local core = require "core"
 
--- local source = [[
--- local dd = test.group[1].value
--- local self = test.group[2].value
--- ]]
 
 local source = [[
 for i,v in ipairs(table_name) do
@@ -14,6 +10,21 @@ end
 for i,v in ipairs(table_name) do
     print(i,v)
 end
+
+local dd = test.group[1].value
+local self = test.group[2].value
+
+struct foo {
+    unsigned int aa;
+    unsigned int bb;
+    unsigned int cc;
+}
+
+local cc = require "ui.cc"
+local bb = require "ui.bb"
+local s1 = 1123
+local s2 = 1123
+local s3 = 1123
 ]]
 
 
@@ -40,7 +51,7 @@ local function test_complete(complete_line)
 end
 
 
-test_complete("for ")
--- test_complete("local cc")
--- test_complete("uns")
--- test_complete("local s")
+test_complete("for")
+test_complete("local s ")
+test_complete("uns")
+test_complete("local tt")
