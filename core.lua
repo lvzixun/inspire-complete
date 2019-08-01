@@ -234,7 +234,7 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
 end
 
 
-local MATCH_SOCRE = {
+local MATCH_SCORE = {
     full = 6,
     sub = 5,
     last = 4,
@@ -250,9 +250,11 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
         return
     end
 
+    -- print("_complete!!!!! layer_token", layer_token.key, layer_token.value)
     -- is final match
     local cur_search_token = search_token_list[search_token_index]
     if not cur_search_token then
+        -- print("gen_complete!!!!", layer_token.value, layer_token.key)
         gen_complete(self, cur_layer_index, layer_token, search_token_list, root_layer_path, result, match_score)
         root_layer_path[cur_root_layer_path_index] = nil
         return
@@ -276,12 +278,12 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
         -- last match
         elseif is_last_search_token and  _substr(next_layer_token.value, cur_search_token.value) then
             need_type_match = false
-            result[#result+1] = {next_layer_token.value, match_score+MATCH_SOCRE.sub}
+            result[#result+1] = {next_layer_token.value, match_score+MATCH_SCORE.sub}
             last_match_list[#last_match_list+1] = next_layer_token
         
         -- any match
-        elseif ref_count <= -2 then
-            need_type_match = false
+        elseif ref_count <= -2 and check_path(root_layer_path, next_layer_token.paths, 2) then
+            -- need_type_match = false
             any_match_list[#any_match_list+1] = next_layer_token
 
         -- type match
@@ -316,14 +318,14 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
         match_score = match_score - score
     end
 
-    _complete_list(full_match_list, 1, MATCH_SOCRE.full)
-    _complete_list(last_match_list, 1, MATCH_SOCRE.last)
-    _complete_list(any_match_list, 1, MATCH_SOCRE.any)
+    _complete_list(full_match_list, 1, MATCH_SCORE.full)
+    _complete_list(last_match_list, 1, MATCH_SCORE.last)
+    _complete_list(any_match_list, 1, MATCH_SCORE.any)
 
     if need_type_match then
         do_ttype_match_list()
         root_layer_path[cur_root_layer_path_index+1] = "*"
-        _complete_list(ttype_match_map, 2, MATCH_SOCRE.type)
+        _complete_list(ttype_match_map, 2, MATCH_SCORE.type)
         root_layer_path[cur_root_layer_path_index+1] = nil
     end
 
@@ -370,7 +372,7 @@ local function complete_at(self, complete_line, complete_index)
     table.sort(first_layer_tokens, function (a, b) return a.count > b.count end)
     local result = {}
     for i, layer_token in ipairs(first_layer_tokens) do
-        _complete(self, 1, layer_token, search_token_list, 2, {}, result, MATCH_SOCRE.full)
+        _complete(self, 1, layer_token, search_token_list, 2, {}, result, MATCH_SCORE.full)
     end
     -- print("#### result ####")
     -- print_r(result)
