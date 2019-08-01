@@ -81,6 +81,7 @@ lline_capture_line(lua_State* L) {
     int sc = read_type(line, 0, len, 'S'); // pass begin space
     lua_newtable(L);
     int idx = 0;
+    // int sc = 0;
     for(i=sc; i<len; i++) {
         char c = line[i];
         char ct = ctype(c);

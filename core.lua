@@ -18,8 +18,6 @@ local function gen_patt_token_key(patt_token)
         local ref = patt_token.ref
         key = string.format("<*%s:%s>", ttype, ref and ref or "")
     end
-    -- prefix = prefix or ""
-    -- return prefix .. key
     return key
 end
 
@@ -98,6 +96,8 @@ function mt:insert_patt(patt)
             elseif tc == "string" then
                 if c ~= v then
                     c = {[v]=1, [c]=1}
+                else
+                    c = {[v] = 2}
                 end
             elseif tc == "nil" then
                 c = v
@@ -141,7 +141,7 @@ function mt:insert_patt(patt)
 end
 
 
-function mt:insert_line(line)
+local function insert_line(self, line)
     if string.match(line, "^%s*$") then
         return
     end
@@ -172,16 +172,21 @@ local function _search_layer_by_value(self, cur_layer_index, search_token)
 end
 
 
-local function check_path(p1, p2)
+local function check_path(p1, p2, c)
+    c = c or 1
     if #p2 >= #p1 then
         for i,v in ipairs(p1) do
             if v ~= "*" then
                 local v2 = p2[i]
                 local tv2 = type(v2)
+                local c2 = tv2 == "table" and v2[v] or 1
                 if tv2 == "table" and not v2[v] then
                     return false
                 end
                 if tv2 == "string" and v2 ~= v then
+                    return false
+                end
+                if c2 < c then
                     return false
                 end
             end
@@ -211,7 +216,7 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
         local cur_root_layer_path_index = #root_layer_path+1
         for k, ref_count in pairs(child) do
             local next_layer_token = self.root[cur_layer_index+1][k]
-            local correct_path = check_path(root_layer_path, next_layer_token.paths)
+            local correct_path = check_path(root_layer_path, next_layer_token.paths, 2)
             if correct_path and (ref_count <= -2 or ref_count >= 2) then
                 is_final = false
                 root_layer_path[cur_root_layer_path_index] = next_layer_token.key
@@ -230,7 +235,8 @@ end
 
 
 local MATCH_SOCRE = {
-    full = 4,
+    full = 6,
+    sub = 5,
     last = 4,
     any = 2,
     type = 1,
@@ -257,29 +263,41 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
     local full_match_list = {}
     local last_match_list = {}
     local any_match_list = {}
+    local ttype_match_list = {}
     local ttype_match_map = {}
+    local need_type_match = true
     for k, ref_count in pairs(layer_token.child) do
         local next_layer_token = next_layer[k]
         -- full match
         if search_token_key == k then
+            need_type_match = false
             full_match_list[#full_match_list+1] = next_layer_token
 
         -- last match
-        elseif ref_count > 0 and is_last_search_token and  _substr(next_layer_token.value, cur_search_token.value) then
+        elseif is_last_search_token and  _substr(next_layer_token.value, cur_search_token.value) then
+            need_type_match = false
+            result[#result+1] = {next_layer_token.value, match_score+MATCH_SOCRE.sub}
             last_match_list[#last_match_list+1] = next_layer_token
         
         -- any match
         elseif ref_count <= -2 then
+            need_type_match = false
             any_match_list[#any_match_list+1] = next_layer_token
 
         -- type match
         elseif cur_search_token.ttype == next_layer_token.ttype then
+            ttype_match_list[#ttype_match_list+1] = next_layer_token
+        end
+    end
+
+    local function do_ttype_match_list()
+        for i,next_layer_token in ipairs(ttype_match_list) do
             local next_layer2 = self.root[cur_layer_index+2]
             local next_child = next_layer_token.child
-            root_layer_path[cur_root_layer_path_index+1] = next_layer_token.key
+            root_layer_path[cur_root_layer_path_index+1] = "*"
             for k,v in pairs(next_child) do
                 local next_layer_token2 = next_layer2[k]
-                if next_layer_token2.count >= 2 and check_path(root_layer_path, next_layer_token2.paths) then
+                if next_layer_token2.count >= 2 and check_path(root_layer_path, next_layer_token2.paths, 2) then
                     ttype_match_map[k] = next_layer_token2
                 end
             end
@@ -302,15 +320,18 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
     _complete_list(last_match_list, 1, MATCH_SOCRE.last)
     _complete_list(any_match_list, 1, MATCH_SOCRE.any)
 
-    root_layer_path[cur_root_layer_path_index+1] = "*"
-    _complete_list(ttype_match_map, 2, MATCH_SOCRE.type)
-    root_layer_path[cur_root_layer_path_index+1] = nil
+    if need_type_match then
+        do_ttype_match_list()
+        root_layer_path[cur_root_layer_path_index+1] = "*"
+        _complete_list(ttype_match_map, 2, MATCH_SOCRE.type)
+        root_layer_path[cur_root_layer_path_index+1] = nil
+    end
 
     root_layer_path[cur_root_layer_path_index] = nil
 end
 
 
-function mt:complete_at(complete_line, complete_index)
+local function complete_at(self, complete_line, complete_index)
     complete_index = complete_index or #complete_line
     local cap = line.capture_line(complete_line)
     local search_token_list = {}
@@ -351,8 +372,8 @@ function mt:complete_at(complete_line, complete_index)
     for i, layer_token in ipairs(first_layer_tokens) do
         _complete(self, 1, layer_token, search_token_list, 2, {}, result, MATCH_SOCRE.full)
     end
-    print("#### result ####")
-    print_r(result)
+    -- print("#### result ####")
+    -- print_r(result)
     table.sort(result, function (a, b)
         local l1 = #a[1]
         local s1 = a[2]
@@ -375,9 +396,81 @@ function mt:complete_at(complete_line, complete_index)
 end
 
 
+function mt:load(source)
+    self.root = {}
+    self.file_lines = {}
+    local file_lines = self.file_lines
+    for line in string.gmatch(source, "[^\r\n]+") do
+        insert_line(self, line)
+        file_lines[#file_lines+1] = line
+    end
+end
+
+function mt:insert_line(line, idx)
+    idx = idx or #self.file_lines+1
+    table.insert(self.file_lines, idx, line)
+    insert_line(self, line)
+end
+
+-- todo it!!!
+-- function mt:remove_line(line, idx)
+-- end
+
+local max_up_lines = 32
+local max_complete_count = 8
+function mt:complete_at(complete_line, complete_index, line_idx)
+    local result = false
+    local result_map = {}
+    if line_idx then
+        local up_ctx = M.new_context()
+        local c = 0
+        local idx = 0
+        while true do
+            if c >= max_up_lines then
+                break
+            end
+            
+            idx = idx + 1
+            local l = self.file_lines[line_idx-idx]
+            if not l then
+                break
+            end
+            if not string.match(l, "^%s*$") then
+                c = c + 1
+                insert_line(up_ctx, l)
+            end
+        end
+
+        result = complete_at(up_ctx, complete_line, complete_index)
+        for i,v in ipairs(result) do
+            result_map[v] = true
+        end
+    end
+    local total_result = complete_at(self, complete_line, complete_index)
+    if result then
+        for i,v in ipairs(total_result) do
+            if not result_map[v] then
+                result[#result+1] = v
+            end
+        end
+    else
+        result = total_result
+    end
+
+    if max_complete_count and #result > max_complete_count then
+        local len = #result
+        for i=max_complete_count+1, len do
+            result[i] = nil
+        end
+    end
+    return result
+end
+
+
 function M.new_context()
     local raw = {
         root = {},
+        file_lines = {},
     }
     return setmetatable(raw, {__index = mt})
 end
