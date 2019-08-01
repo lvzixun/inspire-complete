@@ -54,13 +54,13 @@ print("-------------")
 
 local function test_complete(complete_line, line_idx)
     local result = ctx:complete_at(complete_line, nil, line_idx)
-    print("---------- complete_line", complete_line)
+    print("---------- complete_line:", complete_line)
     if result then
         print_r(result)
     else
         print(result)
     end
-    print("---------------------------------------")
+    print("\n")
 end
 
 
