@@ -41,11 +41,7 @@ result = complete_at(self, complete_line, complete_index)
 
 -- source = read_file("core.lua")
 
-local ctx = core.new_context()
-for line in string.gmatch(source, "[^\r\n]+") do
-    ctx:insert_line(line)
-end
-
+local ctx = core.new_context(source)
 
 local root = ctx.root
 print_r(root)
@@ -53,7 +49,7 @@ print("-------------")
 
 
 local function test_complete(complete_line, line_idx)
-    local result = ctx:complete_at(complete_line, nil, line_idx)
+    local result = ctx:complete_at(source, complete_line, nil, line_idx)
     print("---------- complete_line:", complete_line)
     if result then
         print_r(result)
