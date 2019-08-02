@@ -1,7 +1,9 @@
 local line = require "line.c"
-local print_r = require "print_r"
+local shape_token = line.shape_token
+-- local print_r = require "print_r"
 local M = {}
 local mt = {}
+
 
 local function gen_patt_token_key(patt_token)
     local key
@@ -16,7 +18,8 @@ local function gen_patt_token_key(patt_token)
         end
     else
         local ref = patt_token.ref
-        key = string.format("<*%s:%s>", ttype, ref and ref or "")
+        local shape = patt_token.shape
+        key = string.format("<*%s:%s:%s>", ttype, ref and ref or "", shape and 's' or 'n')
     end
     return key
 end
@@ -34,7 +37,16 @@ local function parser_line(self, l)
         local token = cap[i+2]
         local patt_token
         if token_type == "A" then  -- alpha name
+            local is_shape = false
             local entry = map[token]
+            if not entry then
+                local sp_token = shape_token(token)
+                entry = map[sp_token]
+                if entry then
+                    is_shape = true
+                end
+            end
+
             if not entry then
                 map[token] = {
                     value = token,
@@ -54,7 +66,7 @@ local function parser_line(self, l)
                 patt_token = {
                     value = token,
                     ttype = token_type,
-                    shape = token ~= first_patt_token.value,
+                    shape = is_shape,
                     any = true,
                     ref = entry.first,
                 }
@@ -171,8 +183,15 @@ local function delete_patt(self, patt, del_count)
         end
         if parent_layer_token then
             local ref_count = parent_layer_token.child[key]
-            ref_count = ref_count-del_count
-            assert(ref_count >= 0)
+            if ref_count < 0 then
+                ref_count = ref_count + del_count
+                assert(ref_count <= 0)
+            elseif ref_count > 0 then
+                ref_count = ref_count - del_count
+                assert(ref_count >= 0)    
+            else
+                assert(false)
+            end
             parent_layer_token.child[key] = ref_count ~= 0 and ref_count or nil
         end
         parent_layer_token = layer_token
@@ -248,22 +267,31 @@ end
 
 
 local function gen_complete(self, cur_layer_index, layer_token, search_token_list, root_layer_path, result, match_score)
+    local cp_path = {}
     local function _gen_cpl_str(self, root_layer_path, cur_layer_index, layer_token, search_token_list, buf, result, match_score)
         local is_any = layer_token.any
         local ttype = layer_token.ttype
         local child = layer_token.child
+        local shape = layer_token.shape
         local new_value
         if not is_any then
             new_value = layer_token.value
         else
             local ref = layer_token.ref or cur_layer_index
             local ref_token = search_token_list[ref]
-            new_value = ref_token and ref_token.value or layer_token.value
+            if not ref_token then
+                return
+            end
+            new_value = ref_token.value
+            if shape then
+                new_value = shape_token(new_value)
+            end
         end
         local buf_index = #buf+1
         buf[buf_index] = new_value
         local is_final = true
         local cur_root_layer_path_index = #root_layer_path+1
+        cp_path[buf_index] = layer_token
         for k, ref_count in pairs(child) do
             local next_layer_token = self.root[cur_layer_index+1][k]
             local correct_path = check_path(root_layer_path, next_layer_token.paths, 2)
@@ -279,6 +307,8 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
         end
         assert(#buf == buf_index)
         buf[buf_index] = nil
+        assert(#cp_path == buf_index)
+        cp_path[buf_index] = nil
     end
     _gen_cpl_str(self, root_layer_path, cur_layer_index, layer_token, search_token_list, {}, result, match_score)
 end
@@ -453,7 +483,7 @@ local function resolve_diff(self, source, complete_lineidx)
     local new_lines = {}
     local new_lines_map = {}
     local idx = 1
-    for line in string.gmatch(source, "[^\r\n]+") do
+    for line in string.gmatch(source, "[^\r\n]*") do
         local v = complete_lineidx == idx and "" or line
         new_lines[idx] = v
         idx = idx + 1
@@ -511,48 +541,58 @@ local function resolve_diff(self, source, complete_lineidx)
     end
 end
 
+local function complete_up(self, complete_line, complete_index, begin_line, max_complete_count)
+    local up_ctx = M.new_context()
+    local c = 0
+    local idx = 0
+    while true do
+        if c >= max_complete_count then
+            break
+        end
+        
+        idx = idx + 1
+        local l = self.file_lines[begin_line-idx]
+        if not l then
+            break
+        end
+        if not string.match(l, "^%s*$") then
+            c = c + 1
+            insert_line(up_ctx, l)
+        end
+    end
 
-local max_up_lines = 32
+    local result = complete_at(up_ctx, complete_line, complete_index)
+    return result
+end
+
+
 local max_complete_count = 8
 function mt:complete_at(source, complete_line, complete_index, complete_lineidx)
-    resolve_diff(self, source, line_idx)
-    local result = false
+    resolve_diff(self, source, complete_lineidx)
     local result_map = {}
-    if line_idx then
-        local up_ctx = M.new_context()
-        local c = 0
-        local idx = 0
-        while true do
-            if c >= max_up_lines then
-                break
-            end
-            
-            idx = idx + 1
-            local l = self.file_lines[line_idx-idx]
-            if not l then
-                break
-            end
-            if not string.match(l, "^%s*$") then
-                c = c + 1
-                insert_line(up_ctx, l)
-            end
-        end
+    complete_lineidx = complete_lineidx or (#self.file_lines + 1)
 
-        result = complete_at(up_ctx, complete_line, complete_index)
-        for i,v in ipairs(result) do
-            result_map[v] = true
+    local result = {}
+    local result_map = {}
+    local function merge_into_result(t)
+        if not t then
+            return
         end
-    end
-    local total_result = complete_at(self, complete_line, complete_index)
-    if result then
-        for i,v in ipairs(total_result) do
+        for i,v in ipairs(t) do
             if not result_map[v] then
                 result[#result+1] = v
+                result_map[v] = true
             end
         end
-    else
-        result = total_result
     end
+    local up2_result = complete_up(self, complete_line, complete_index, complete_lineidx, 2)
+    local up8_result = complete_up(self, complete_line, complete_index, complete_lineidx, 8)
+    local up32_result = complete_up(self, complete_line, complete_index, complete_lineidx, 32)
+    local total_result = complete_at(self, complete_line, complete_index)
+    merge_into_result(up2_result)
+    merge_into_result(up8_result)
+    merge_into_result(up32_result)
+    merge_into_result(total_result)
 
     if max_complete_count and #result > max_complete_count then
         local len = #result

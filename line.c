@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <lua.h>
 #include <lauxlib.h>
 
@@ -122,11 +123,52 @@ lline_capture_line(lua_State* L) {
 }
 
 
+static int
+lshape_token(lua_State* L) {
+    size_t len = 0;
+    const char* s = luaL_tolstring(L, 1, &len);
+    luaL_Buffer b;
+    size_t new_sz = len *2;
+    char * buffer = luaL_buffinitsize(L, &b, new_sz);
+    size_t i=0;
+    size_t buf_idx = 0;
+    bool is_shape = false;
+    for(i=0; i<len; i++) {
+        char c = s[i];
+        if(c >='A' && c <= 'Z') {
+            if(i > 0) {
+                buffer[buf_idx++] = '_';
+            }
+            buffer[buf_idx++] = c - 'A' + 'a';
+            is_shape = true;
+        }else if (c == '_') {
+            char nc = ((i+1)<len)?(s[i+1]):('\0');
+            if(nc >= 'a' && nc <= 'z') {
+                buffer[buf_idx++] = nc - 'a' + 'A';
+                is_shape = true;
+                i++;
+            }else {
+                buffer[buf_idx++] = c;                
+            }
+        }else if(i ==0 && c >='a' && c <= 'z') {
+            buffer[buf_idx++] = c - 'a' + 'A';
+            is_shape = true;
+        }else {
+            buffer[buf_idx++] = c;
+        }
+    }
+    luaL_pushresultsize(&b, buf_idx);
+    lua_pushboolean(L, is_shape);
+    return 2;
+}
+
+
 int
 luaopen_line_c(lua_State *L) {
     luaL_checkversion(L);
     luaL_Reg l[] = {
         {"capture_line", lline_capture_line},
+        {"shape_token", lshape_token},
         {NULL, NULL}
     };
 
