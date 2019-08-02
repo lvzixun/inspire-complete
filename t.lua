@@ -28,6 +28,9 @@ struct foo {
 
 local cc = require "ui.cc"
 local bb = require "ui.bb"
+local TestComplete = require "ui.test_complete"
+local BoxWidget = require "ui.box_widget"
+
 local s1 = 1123
 local s2 = 1123
 local s3 = 1123
@@ -65,5 +68,5 @@ test_complete("local s")
 test_complete("uns")
 test_complete("local func")
 test_complete("local kiss")
--- test_complete("local sss", 4)
+test_complete("local ss", 23)
 
