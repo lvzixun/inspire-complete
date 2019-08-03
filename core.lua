@@ -413,8 +413,8 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
 end
 
 
-local function complete_at(self, complete_line, complete_index)
-    complete_index = complete_index or #complete_line
+local function complete_at(self, complete_line, complete_col)
+    complete_col = complete_col or #complete_line
     local cap = line.capture_line(complete_line)
     local search_token_list = {}
     local len = #cap
@@ -424,11 +424,11 @@ local function complete_at(self, complete_line, complete_index)
         local ttype = cap[i+1]
         local token = cap[i+2]
         local end_index = begin_index + #token - 1
-        if complete_index >= begin_index and complete_index < end_index then
+        if complete_col >= begin_index and complete_col < end_index then
             break
         end
 
-        if end_index <= complete_index then
+        if end_index <= complete_col then
             local search_token = {
                 value = token,
                 ttype = ttype,
@@ -478,15 +478,20 @@ local function complete_at(self, complete_line, complete_index)
 end
 
 
-local function resolve_diff(self, source, complete_lineidx)
+local function resolve_diff(self, source, complete_row)
     local lines_map = self.lines_map
     local new_lines = {}
     local new_lines_map = {}
-    local idx = 1
+    local row = 1
+    local complete_line = false
     for line in string.gmatch(source, "[^\r\n]*") do
-        local v = complete_lineidx == idx and "" or line
-        new_lines[idx] = v
-        idx = idx + 1
+        local v = line
+        if complete_row == row then
+            complete_line = v
+            v = ""
+        end
+        new_lines[row] = v
+        row = row + 1
         new_lines_map[v] = (new_lines_map[v] or 0)+1
     end
 
@@ -522,26 +527,20 @@ local function resolve_diff(self, source, complete_lineidx)
         for i,v in ipairs(new_lines) do
             insert_line(self, v)
         end
-        return
-    end
-
-    -- print("############ del_lines_map ############")
-    -- print_r(del_lines_map)
-
-    -- print("############ add_lines_map ############")
-    -- print_r(add_lines_map)
-
-    for k,v in pairs(del_lines_map) do
-        delete_line(self, k, v)
-    end
-    for k,v in pairs(add_lines_map) do
-        for i=1,v do
-            insert_line(self, k)
+    else
+        for k,v in pairs(del_lines_map) do
+            delete_line(self, k, v)
+        end
+        for k,v in pairs(add_lines_map) do
+            for i=1,v do
+                insert_line(self, k)
+            end
         end
     end
+    return complete_line
 end
 
-local function complete_up(self, complete_line, complete_index, begin_line, max_complete_count)
+local function complete_up(self, complete_line, complete_col, begin_row, max_complete_count)
     local up_ctx = M.new_context()
     local c = 0
     local idx = 0
@@ -551,7 +550,7 @@ local function complete_up(self, complete_line, complete_index, begin_line, max_
         end
         
         idx = idx + 1
-        local l = self.file_lines[begin_line-idx]
+        local l = self.file_lines[begin_row-idx]
         if not l then
             break
         end
@@ -561,16 +560,19 @@ local function complete_up(self, complete_line, complete_index, begin_line, max_
         end
     end
 
-    local result = complete_at(up_ctx, complete_line, complete_index)
+    local result = complete_at(up_ctx, complete_line, complete_col)
     return result
 end
 
 
 local max_complete_count = 8
-function mt:complete_at(source, complete_line, complete_index, complete_lineidx)
-    resolve_diff(self, source, complete_lineidx)
+function mt:complete_at(source, complete_row, complete_col)
+    assert(source)
+    assert(complete_row)
+    local complete_line = resolve_diff(self, source, complete_row)
+    assert(complete_line)
     local result_map = {}
-    complete_lineidx = complete_lineidx or (#self.file_lines + 1)
+    complete_col = complete_col or #complete_line
 
     local result = {}
     local result_map = {}
@@ -585,10 +587,10 @@ function mt:complete_at(source, complete_line, complete_index, complete_lineidx)
             end
         end
     end
-    local up2_result = complete_up(self, complete_line, complete_index, complete_lineidx, 2)
-    local up8_result = complete_up(self, complete_line, complete_index, complete_lineidx, 8)
-    local up32_result = complete_up(self, complete_line, complete_index, complete_lineidx, 32)
-    local total_result = complete_at(self, complete_line, complete_index)
+    local up2_result = complete_up(self, complete_line, complete_col, complete_row, 2)
+    local up8_result = complete_up(self, complete_line, complete_col, complete_row, 8)
+    local up32_result = complete_up(self, complete_line, complete_col, complete_row, 32)
+    local total_result = complete_at(self, complete_line, complete_col)
     merge_into_result(up2_result)
     merge_into_result(up8_result)
     merge_into_result(up32_result)
