@@ -51,8 +51,19 @@ print_r(root)
 print("-------------")
 
 
-local function test_complete(complete_line, line_idx)
-    local result = ctx:complete_at(source, complete_line, nil, line_idx)
+local function insert_source(source, line, row)
+	local lines = {}
+	for l in string.gmatch(source, "[^\r\n]*") do
+		lines[#lines+1] = l
+	end
+	row = row or #lines+1
+	table.insert(lines, row, line)
+	return table.concat(lines, "\n"), row
+end
+
+local function test_complete(complete_line, row, col)
+	local source, row = insert_source(source, complete_line, row)
+    local result = ctx:complete_at(source, row, col)
     print("---------- complete_line:", complete_line)
     if result then
         print_r(result)
