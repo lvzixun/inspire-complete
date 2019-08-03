@@ -95,7 +95,6 @@ local function dispatch()
 	end
 
 	local result = ctx:complete_at(source, row, col)
-	assert(false)
 	if not result then
 		write_line("%d", 0)
 	else
