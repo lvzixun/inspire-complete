@@ -103,5 +103,5 @@ def do_complete():
 		idx = idx + 1
 
 
-
-do_complete()
+if __name__ == "__main__":
+	do_complete()
