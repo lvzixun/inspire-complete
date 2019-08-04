@@ -1,9 +1,28 @@
+local platform, work_dir = ...
+assert(platform)
+assert(work_dir)
+
+local errlog_path = false
+if platform == "windows" then
+	local core_path = work_dir .. "\\?.dll;"
+	local lua_path = work_dir .. "\\?.lua;"
+	package.cpath = core_path .. package.cpath
+	package.path = lua_path .. package.path
+	package.
+	errlog_path = work_dir .. "\\inspire_error.log"
+else
+	local core_path = work_dir .. "/?.so"
+	local lua_path = work_dir .. "/?.lua"
+	package.cpath = core_path .. package.cpath
+	package.path = lua_path .. package.path
+	errlog_path = work_dir .. "/inspire_error.log"
+end
+
 local core = require "core"
 local stdin_fd = io.stdin
 local stdout_fd = io.stdout
 
 local ctx_map = {}
-
 
 
 --[=[
@@ -40,7 +59,7 @@ s2
 s3
 ]=]
 
-local err_fd = io.open("inspire_error.log", "w")
+local err_fd = io.open(errlog_path, "w")
 assert(err_fd)
 local function write_err(fmt, ...)
 	local s = string.format(fmt, ...)
@@ -108,6 +127,7 @@ end
 
 
 local function main()
+	write_err("inspire start service:")
 	while true do
 		local ok, err = xpcall(dispatch, debug.traceback)
 		if not ok then
