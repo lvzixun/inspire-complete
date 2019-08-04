@@ -499,7 +499,7 @@ local function resolve_diff(self, source, complete_row)
     local new_lines_map = {}
     local row = 1
     local complete_line = false
-    for line in string.gmatch(source, "[^\r\n]*") do
+    for line in string.gmatch(source, "([^\r\n]*)[\r\n]?") do
         local v = line
         if complete_row == row then
             complete_line = v
