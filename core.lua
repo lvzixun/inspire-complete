@@ -267,7 +267,6 @@ end
 
 
 local function gen_complete(self, cur_layer_index, layer_token, search_token_list, root_layer_path, result, match_score)
-    local cp_path = {}
     local function _gen_cpl_str(self, root_layer_path, cur_layer_index, layer_token, search_token_list, buf, result, match_score)
         local is_any = layer_token.any
         local ttype = layer_token.ttype
@@ -280,6 +279,7 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
             local ref = layer_token.ref or cur_layer_index
             local ref_token = search_token_list[ref]
             if not ref_token then
+                result[#result+1] = {table.concat(buf), match_score}
                 return
             end
             new_value = ref_token.value
@@ -291,7 +291,6 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
         buf[buf_index] = new_value
         local is_final = true
         local cur_root_layer_path_index = #root_layer_path+1
-        cp_path[buf_index] = layer_token
         for k, ref_count in pairs(child) do
             local next_layer_token = self.root[cur_layer_index+1][k]
             local correct_path = check_path(root_layer_path, next_layer_token.paths, 2)
@@ -307,8 +306,6 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
         end
         assert(#buf == buf_index)
         buf[buf_index] = nil
-        assert(#cp_path == buf_index)
-        cp_path[buf_index] = nil
     end
     _gen_cpl_str(self, root_layer_path, cur_layer_index, layer_token, search_token_list, {}, result, match_score)
 end
