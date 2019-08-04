@@ -1,6 +1,7 @@
 local platform, lua_dir, lib_dir = ...
 assert(platform)
-assert(work_dir)
+assert(lua_dir)
+assert(lib_dir)
 
 local errlog_path = false
 if platform == "windows" then
@@ -8,13 +9,13 @@ if platform == "windows" then
 	local lua_path = lua_dir .. "\\?.lua;"
 	package.cpath = core_path .. package.cpath
 	package.path = lua_path .. package.path
-	errlog_path = work_dir .. "\\inspire_error.log"
+	errlog_path = lua_dir .. "\\inspire_error.log"
 elseif platform == "macosx" then
 	local core_path = lib_dir .. "/?.so;"
 	local lua_path = lua_dir .. "/?.lua;"
 	package.cpath = core_path .. package.cpath
 	package.path = lua_path .. package.path
-	errlog_path = work_dir .. "/inspire_error.log"
+	errlog_path = lua_dir .. "/inspire_error.log"
 else
 	error("invalid platform:" .. platform)
 end
