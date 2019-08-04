@@ -306,7 +306,11 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
         local last_ttype = last_search_token.ttype
         local last_value = last_search_token.value
         local buf_index = #buf+1
-        buf[buf_index] = buf_index == 1 and last_ttype ~= "A" and last_value == new_value and "" or new_value
+        if buf_index == 1 and last_ttype ~= "A" and last_value == new_value then
+            buf[buf_index] = nil
+        else
+            buf[buf_index] = new_value
+        end
         local is_final = true
         local cur_root_layer_path_index = #root_layer_path+1
         for k, ref_count in pairs(child) do
@@ -319,10 +323,10 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
                 root_layer_path[cur_root_layer_path_index] = nil
             end
         end
-        if is_final then
+        if is_final and #buf>0 then
             result[#result+1] = {table.concat(buf), match_score}
         end
-        assert(#buf == buf_index)
+        -- assert(#buf == buf_index)
         buf[buf_index] = nil
     end
     _gen_cpl_str(self, root_layer_path, cur_layer_index, layer_token, search_token_list, {}, result, match_score)
