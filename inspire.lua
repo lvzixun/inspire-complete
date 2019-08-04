@@ -10,7 +10,7 @@ if platform == "windows" then
 	package.cpath = core_path .. package.cpath
 	package.path = lua_path .. package.path
 	errlog_path = lua_dir .. "\\inspire_error.log"
-elseif platform == "macosx" then
+elseif platform == "osx" then
 	local core_path = lib_dir .. "/?.so;"
 	local lua_path = lua_dir .. "/?.lua;"
 	package.cpath = core_path .. package.cpath
