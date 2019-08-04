@@ -27,6 +27,11 @@ def char2type(char):
 
 
 def check_need_completion(view):
+	file_name = view.file_name()
+	suffix = file_name and file_name.split(".")[-1]
+	if not suffix or suffix == "" or suffix == "log":
+		return False
+
 	point = view.sel()[0].begin() - 1
 	if point < 0:
 		return False
@@ -54,7 +59,7 @@ class InspireComplete(object):
 	def __init__(self):
 		work_dir = os.path.dirname(os.path.realpath(__file__))
 		platform = sublime.platform()
-		print("work_dir", work_dir)
+		# print("work_dir", work_dir)
 		inspire_lua =  os.path.join(work_dir, "inspire.lua")
 		self._inspire_server = Popen(['lua', inspire_lua, platform, work_dir], 
 			stdout=PIPE, stdin=PIPE, stderr=PIPE, 
@@ -108,34 +113,38 @@ class InspireComplete(object):
 class InspirListener(sublime_plugin.EventListener):
 	def __init__(self):
 		self.inspire_complete = InspireComplete()
+		self.complete = False
+
 
 	def on_modified(self, view):
 		b = check_need_completion(view)
 		if b:
 			self.per_complete()
 
+
 	def per_complete(self):
 		sublime.active_window().run_command("hide_auto_complete")
 		def hack2():
+			self.complete = True
 			sublime.active_window().run_command("auto_complete",{
 				'disable_auto_insert': True,
 				'api_completions_only': True,
 				'next_competion_if_showing': False})
-		hack2()
+			self.complete = False
 		sublime.set_timeout(hack2, 1)
 
+
 	def on_query_completions(self, view, prefix, locations):
+		if not self.complete:
+			return
+		
 		row, col = view.rowcol(locations[0])
 		row += 1
-
-		file_name = view.file_name()
-		suffix = file_name and file_name.split(".")[-1]
-		if not suffix or suffix == "" or suffix == "log":
-			return
-
 		flag = 0
 		source = view.substr(sublime.Region(0, view.size()))
+		file_name = view.file_name()
 		result = self.inspire_complete.complete_at(file_name, source, row, col)
+		# print("prefix", prefix, locations)
 		print(result)
 
 		ret = []
