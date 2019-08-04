@@ -8,7 +8,6 @@ if platform == "windows" then
 	local lua_path = work_dir .. "\\?.lua;"
 	package.cpath = core_path .. package.cpath
 	package.path = lua_path .. package.path
-	package.
 	errlog_path = work_dir .. "\\inspire_error.log"
 else
 	local core_path = work_dir .. "/?.so"
