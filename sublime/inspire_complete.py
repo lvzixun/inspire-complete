@@ -52,9 +52,11 @@ def get_startup_info(platform):
 
 class InspireComplete(object):
 	def __init__(self):
-		work_dir = 'C:\\Users\\zixun\\AppData\\Roaming\\Sublime Text 3\\Packages\\line-complete'
+		work_dir = os.path.dirname(os.path.realpath(__file__))
+		platform = sublime.platform()
+		print("work_dir", work_dir)
 		inspire_lua =  os.path.join(work_dir, "inspire.lua")
-		self._inspire_server = Popen(['lua', inspire_lua, 'windows', work_dir], 
+		self._inspire_server = Popen(['lua', inspire_lua, platform, work_dir], 
 			stdout=PIPE, stdin=PIPE, stderr=PIPE, 
 			startupinfo=get_startup_info(sublime.platform()))
 		def check_servier():
@@ -134,7 +136,7 @@ class InspirListener(sublime_plugin.EventListener):
 		flag = 0
 		source = view.substr(sublime.Region(0, view.size()))
 		result = self.inspire_complete.complete_at(file_name, source, row, col)
-		# print(result)
+		print(result)
 
 		ret = []
 		for v in result:
