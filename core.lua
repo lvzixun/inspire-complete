@@ -128,10 +128,15 @@ local function insert_patt(self, patt)
             cur_layer = {}
             root[i] = cur_layer
         end
+        local ttype = patt_token.ttype
         local cur_key = patt_token.key
         local layer_token = cur_layer[cur_key]
         local path = patt_token.path
         patt_token.path = nil
+        if ttype == "A" then
+            local tk = self.alpha_tokens[patt_token.value] or 0
+            self.alpha_tokens[patt_token.value] = tk + 1
+        end
         if not layer_token then
             layer_token = patt_token
             layer_token.paths = {}
@@ -175,8 +180,18 @@ local function delete_patt(self, patt, del_count)
     for i,patt_token in ipairs(patt) do
         local cur_layer = root[i]
         local key = patt_token.key
+        local patt_value = patt_token.value
         local layer_token = cur_layer[key]
         layer_token.count = layer_token.count - del_count
+        if patt_token.ttype == "A" then
+            local tk = self.alpha_tokens[patt_value]
+            assert(tk)
+            tk = tk - 1
+            if tk <= 0 then
+                self.alpha_tokens[patt_token] = nil
+            end
+        end
+
         delete_paths(layer_token.paths, patt_token.path, del_count)
         if layer_token.count == 0 then
             cur_layer[key] = nil
@@ -287,8 +302,11 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
                 new_value = shape_token(new_value)
             end
         end
+        local last_search_token = search_token_list[#search_token_list]
+        local last_ttype = last_search_token.ttype
+        local last_value = last_search_token.value
         local buf_index = #buf+1
-        buf[buf_index] = new_value
+        buf[buf_index] = buf_index == 1 and last_ttype ~= "A" and last_value == new_value and "" or new_value
         local is_final = true
         local cur_root_layer_path_index = #root_layer_path+1
         for k, ref_count in pairs(child) do
@@ -521,6 +539,7 @@ local function resolve_diff(self, source, complete_row)
     -- full source insert when modify_count beyond 30%
     if modify_count >= total_count * 0.3 then
         self.root = {}
+        self.alpha_tokens = {}
         for i,v in ipairs(new_lines) do
             insert_line(self, v)
         end
@@ -535,6 +554,21 @@ local function resolve_diff(self, source, complete_row)
         end
     end
     return complete_line
+end
+
+local function complete_tokens(self, complete_line)
+    local patt =  parser_line(self, complete_line)
+    local last_patt_token = patt[#patt]
+    local list = {}
+    if last_patt_token.ttype == "A" then
+        local patt_value = last_patt_token.value
+        for k,v in pairs(self.alpha_tokens) do
+            if _substr(k, patt_value) then
+                table.insert(list, k)
+            end
+        end
+    end
+    return list
 end
 
 local function complete_up(self, complete_line, complete_col, begin_row, max_complete_count)
@@ -599,6 +633,9 @@ function mt:complete_at(source, complete_row, complete_col)
             result[i] = nil
         end
     end
+
+    local alpha_result = complete_tokens(self, complete_line)
+    merge_into_result(alpha_result)
     return result
 end
 
@@ -608,6 +645,7 @@ function M.new_context(source)
         root = {},
         file_lines = {},
         lines_map = {},
+        alpha_tokens = {},
     }
     local obj = setmetatable(raw, {__index = mt})
     if source then
