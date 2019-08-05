@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
 
+import platform
 import time
 from subprocess import Popen, PIPE, STDOUT
 
-
-p = Popen(['lua', 'inspire.lua'], stdout=PIPE, stdin=PIPE, stderr=STDOUT)
+system = platform.system()
+sys2plt = {
+	"Windows" : "windows",
+	"Darwin" : "osx",
+}
+p = Popen(['lua', 'inspire.lua', sys2plt[system], ".", "."], stdout=PIPE, stdin=PIPE, stderr=STDOUT)
 def write_line(l):
 	l = bytes(l, 'utf-8')
 	p.stdin.write(l)
