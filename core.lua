@@ -294,7 +294,9 @@ local function gen_complete(self, cur_layer_index, layer_token, search_token_lis
             local ref = layer_token.ref or cur_layer_index
             local ref_token = search_token_list[ref]
             if not ref_token then
-                result[#result+1] = {table.concat(buf), match_score}
+                if #buf > 0 then
+                    result[#result+1] = {table.concat(buf), match_score}
+                end
                 return
             end
             new_value = ref_token.value
