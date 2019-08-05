@@ -434,7 +434,7 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
 end
 
 
-local function complete_at(self, complete_line, complete_col)
+local function parser_complete_line(complete_line, complete_col)
     complete_col = complete_col or #complete_line
     local cap = line.capture_line(complete_line)
     local search_token_list = {}
@@ -464,7 +464,11 @@ local function complete_at(self, complete_line, complete_col)
     if #search_token_list <= 0 then
         return
     end
+    return search_token_list
+end
 
+
+local function complete_at(self, search_token_list)
     local first_layer_tokens = _search_layer_by_value(self, 1, search_token_list[1])
     if not first_layer_tokens then
         return
@@ -562,9 +566,8 @@ local function resolve_diff(self, source, complete_row)
     return complete_line
 end
 
-local function complete_tokens(self, complete_line)
+local function complete_tokens(self, last_patt_token)
     local patt =  parser_line(self, complete_line)
-    local last_patt_token = patt[#patt]
     local list = {}
     if last_patt_token.ttype == "A" then
         local patt_value = last_patt_token.value
@@ -577,7 +580,7 @@ local function complete_tokens(self, complete_line)
     return list
 end
 
-local function complete_up(self, complete_line, complete_col, begin_row, max_complete_count)
+local function complete_up(self, search_token_list, begin_row, max_complete_count)
     local up_ctx = M.new_context()
     local c = 0
     local idx = 0
@@ -597,7 +600,7 @@ local function complete_up(self, complete_line, complete_col, begin_row, max_com
         end
     end
 
-    local result = complete_at(up_ctx, complete_line, complete_col)
+    local result = complete_at(up_ctx, search_token_list)
     return result
 end
 
@@ -624,23 +627,27 @@ function mt:complete_at(source, complete_row, complete_col)
             end
         end
     end
-    local up2_result = complete_up(self, complete_line, complete_col, complete_row, 2)
-    local up8_result = complete_up(self, complete_line, complete_col, complete_row, 8)
-    local up32_result = complete_up(self, complete_line, complete_col, complete_row, 32)
-    local total_result = complete_at(self, complete_line, complete_col)
-    merge_into_result(up2_result)
-    merge_into_result(up8_result)
-    merge_into_result(up32_result)
-    merge_into_result(total_result)
 
-    if max_complete_count and #result > max_complete_count then
-        local len = #result
-        for i=max_complete_count+1, len do
-            result[i] = nil
+    local search_token_list = parser_complete_line(complete_line, complete_col)
+    if search_token_list and #search_token_list<= 8 then
+        local up2_result = complete_up(self, search_token_list, complete_row, 2)
+        local up8_result = complete_up(self, search_token_list, complete_row, 8)
+        local up32_result = complete_up(self, search_token_list, complete_row, 32)
+        local total_result = complete_at(self, search_token_list)
+        merge_into_result(up2_result)
+        merge_into_result(up8_result)
+        merge_into_result(up32_result)
+        merge_into_result(total_result)
+
+        if max_complete_count and #result > max_complete_count then
+            local len = #result
+            for i=max_complete_count+1, len do
+                result[i] = nil
+            end
         end
     end
 
-    local alpha_result = complete_tokens(self, complete_line)
+    local alpha_result = complete_tokens(self, search_token_list[#search_token_list])
     merge_into_result(alpha_result)
     return result
 end
