@@ -445,7 +445,7 @@ local function parser_complete_line(complete_line, complete_col)
         local begin_index = cap[i]
         local ttype = cap[i+1]
         local token = cap[i+2]
-        begin_index = utf8.len(complete_line, 1, begin_index-1)
+        begin_index = utf8.len(complete_line, 1, begin_index)
         token_len = utf8.len(token)
         local end_index = begin_index + token_len - 1
         if complete_col >= begin_index and complete_col < end_index then
