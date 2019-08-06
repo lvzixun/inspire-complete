@@ -57,7 +57,7 @@ read_type(const char* s, size_t b, size_t e, char t) {
     int read_count = 0;
     size_t i;
     for(i=b; i<e; i++) {
-        char c = s[i];
+        unsigned char c = (unsigned char)s[i];
         char ct = ctype(c);
         if(ct == t) {
             read_count++;
@@ -84,7 +84,7 @@ lline_capture_line(lua_State* L) {
     int idx = 0;
     int sc = 0;
     for(i=sc; i<len; i++) {
-        char c = line[i];
+        unsigned char c = (unsigned char)line[i];
         char ct = ctype(c);
         switch(ct) {
             case 'A': {
