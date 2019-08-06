@@ -235,7 +235,8 @@ end
 
 
 local function _substr(s, sub_s)
-    return not not string.find(s, sub_s, 1, true)
+    local b = string.find(s, sub_s, 1, true)
+    return b and b == 1
 end
 
 
