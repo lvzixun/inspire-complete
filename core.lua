@@ -505,9 +505,22 @@ local function complete_at(self, search_token_list)
     return ret
 end
 
+local function get_loaded_info(self, file_name)
+    local loaded = self.loaded
+    local info = loaded[file_name]
+    if not info then
+        info = {
+            file_lines = {},
+            lines_map = {},
+        }
+        loaded[file_name] = info
+    end
+    return info
+end
 
-local function resolve_diff(self, source, complete_row)
-    local lines_map = self.lines_map
+local function resolve_diff(self, file_name, source, complete_row)
+    local loaded_info = get_loaded_info(self, file_name)
+    local lines_map = loaded_info.lines_map
     local new_lines = {}
     local new_lines_map = {}
     local row = 1
@@ -523,47 +536,33 @@ local function resolve_diff(self, source, complete_row)
         new_lines_map[v] = (new_lines_map[v] or 0)+1
     end
 
-    local modify_count = 0
     local add_lines_map = {}
     local del_lines_map = {}
     for k,v in pairs(new_lines_map) do
         local ov = lines_map[k]
         if not ov then
-            modify_count = modify_count+1
             add_lines_map[k] = v
         elseif ov > v then
-            modify_count = modify_count+1
             del_lines_map[k] = ov-v
         elseif ov < v then
-            modify_count = modify_count+1
             add_lines_map[k] = v-ov
         end
         lines_map[k] = nil
     end
     for k,v in pairs(lines_map) do
         assert(del_lines_map[k] == nil)
-        modify_count = modify_count+1
         del_lines_map[k] = v
     end
 
-    local total_count = #self.file_lines
-    self.lines_map = new_lines_map
-    self.file_lines = new_lines
-    -- full source insert when modify_count beyond 30%
-    if modify_count >= total_count * 0.3 then
-        self.root = {}
-        self.alpha_tokens = {}
-        for i,v in ipairs(new_lines) do
-            insert_line(self, v)
-        end
-    else
-        for k,v in pairs(del_lines_map) do
-            delete_line(self, k, v)
-        end
-        for k,v in pairs(add_lines_map) do
-            for i=1,v do
-                insert_line(self, k)
-            end
+    loaded_info.lines_map = new_lines_map
+    loaded_info.file_lines = new_lines
+
+    for k,v in pairs(del_lines_map) do
+        delete_line(self, k, v)
+    end
+    for k,v in pairs(add_lines_map) do
+        for i=1,v do
+            insert_line(self, k)
         end
     end
     return complete_line
@@ -583,7 +582,7 @@ local function complete_tokens(self, last_patt_token)
     return list
 end
 
-local function complete_up(self, search_token_list, begin_row, max_complete_count)
+local function complete_up(self, file_name, search_token_list, begin_row, max_complete_count)
     local up_ctx = M.new_context()
     local c = 0
     local idx = 0
@@ -593,7 +592,7 @@ local function complete_up(self, search_token_list, begin_row, max_complete_coun
         end
         
         idx = idx + 1
-        local l = self.file_lines[begin_row-idx]
+        local l = self.loaded[file_name].file_lines[begin_row-idx]
         if not l then
             break
         end
@@ -609,10 +608,10 @@ end
 
 
 local max_complete_count = 8
-function mt:complete_at(source, complete_row, complete_col)
+function mt:complete_at(file_name, source, complete_row, complete_col)
     assert(source)
     assert(complete_row)
-    local complete_line = resolve_diff(self, source, complete_row)
+    local complete_line = resolve_diff(self, file_name, source, complete_row)
     assert(complete_line)
     local result_map = {}
     complete_col = complete_col or #complete_line
@@ -633,9 +632,9 @@ function mt:complete_at(source, complete_row, complete_col)
 
     local search_token_list = parser_complete_line(complete_line, complete_col)
     if search_token_list and #search_token_list<= 32 then
-        local up2_result = complete_up(self, search_token_list, complete_row, 2)
-        local up8_result = complete_up(self, search_token_list, complete_row, 8)
-        local up32_result = complete_up(self, search_token_list, complete_row, 32)
+        local up2_result = complete_up(self, file_name, search_token_list, complete_row, 2)
+        local up8_result = complete_up(self, file_name, search_token_list, complete_row, 8)
+        local up32_result = complete_up(self, file_name, search_token_list, complete_row, 32)
         local total_result = complete_at(self, search_token_list)
         merge_into_result(up2_result)
         merge_into_result(up8_result)
@@ -656,19 +655,22 @@ function mt:complete_at(source, complete_row, complete_col)
 end
 
 
-function M.new_context(source)
+function mt:complete_load(file_name, source)
+    resolve_diff(self, file_name, source)
+end
+
+function mt:complete_isloaded(file_name)
+    return not not self.loaded[file_name]
+end
+
+function M.new_context()
     local raw = {
         root = {},
-        file_lines = {},
-        lines_map = {},
+        loaded = {},
         alpha_tokens = {},
     }
     local obj = setmetatable(raw, {__index = mt})
-    if source then
-        resolve_diff(obj, source)
-    end
     return obj
 end
-
 
 return M

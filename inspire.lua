@@ -3,28 +3,77 @@ assert(platform)
 assert(lua_dir)
 assert(lib_dir)
 
-local errlog_path = false
+local inspirelog_path = false
 if platform == "windows" then
 	local core_path = lib_dir .. "\\?.dll;"
 	local lua_path = lua_dir .. "\\?.lua;"
 	package.cpath = core_path .. package.cpath
 	package.path = lua_path .. package.path
-	errlog_path = lua_dir .. "\\inspire_error.log"
+	inspirelog_path = lua_dir .. "\\inspire_error.log"
 elseif platform == "osx" then
 	local core_path = lib_dir .. "/?.so;"
 	local lua_path = lua_dir .. "/?.lua;"
 	package.cpath = core_path .. package.cpath
 	package.path = lua_path .. package.path
-	errlog_path = lua_dir .. "/inspire_error.log"
+	inspirelog_path = lua_dir .. "/inspire_error.log"
 else
 	error("invalid platform:" .. platform)
 end
 
 local core = require "core"
+local file = require "file"
 local stdin_fd = io.stdin
 local stdout_fd = io.stdout
 
 local ctx_map = {}
+
+local ins_fd = io.open(inspirelog_path, "w")
+assert(ins_fd)
+local function _log(t, fmt, ...)
+	fmt = string.format("[%s] ", t) .. fmt
+	local s = string.format(fmt, ...)
+	ins_fd:write(s)
+	ins_fd:write("\n")
+	ins_fd:flush()
+end
+
+local function log_err(fmt, ...)
+	return _log("ERR", fmt, ...)
+end
+
+local function log_info(fmt, ...)
+	return _log("INF", fmt, ...)
+end
+
+
+local function get_ctx_by_filename(filename)
+	local suff = file.suffix(filename)
+	local ctx = ctx_map[suff]
+	if not ctx then
+		ctx = core.new_context()
+		ctx_map[suff] = ctx
+	end
+	return ctx
+end
+
+
+local max_files_count = 16
+local max_file_size = 256 * 1024
+local function load_extra_files(filename)
+	local suff = file.suffix(filename)
+	local dir = file.basedir(filename)
+	if dir then
+		local files = file.find_files(dir, suff, max_files_count, max_file_size)
+		local ctx = get_ctx_by_filename(filename)
+		for i,v in ipairs(files) do
+			if not ctx:complete_isloaded(v) then
+				local source = file.read_file(v)
+				ctx:complete_load(v, source)
+				log_info("load_extra: %s", v)
+			end
+		end
+	end
+end
 
 
 --[=[
@@ -61,19 +110,10 @@ s2
 s3
 ]=]
 
-local err_fd = io.open(errlog_path, "w")
-assert(err_fd)
-local function write_err(fmt, ...)
-	local s = string.format(fmt, ...)
-	err_fd:write(s)
-	err_fd:write("\n")
-	err_fd:flush()
-end
-
 local function read_line()
 	local line = stdin_fd:read("l")
 	if not line then
-		write_err("stdin is break when read_line.")
+		log_err("stdin is break when read_line.")
 		os.exit()
 	end
 	return line
@@ -82,7 +122,7 @@ end
 local function read_data(sz)
 	local data, err = stdin_fd:read(sz)
 	if not data then
-		write_err("stdin is break when read_data err.")
+		log_err("stdin is break when read_data err.")
 		os.exit()
 	end
 	return data
@@ -93,7 +133,7 @@ local function write_line(fmt, ...)
 	stdout_fd:write(s)
 	local ok, err = stdout_fd:write("\n")
 	if not ok then
-		write_err("stdout is break when write_line err:%s", err)
+		log_err("stdout is break when write_line err:%s", err)
 		os.exit()
 	end
 end
@@ -109,13 +149,10 @@ local function dispatch()
 	local source = read_data(source_size)
 	assert(source_size)
 
-	local ctx = ctx_map[filename]
-	if not ctx then
-		ctx = core.new_context()
-		ctx_map[filename] = ctx
-	end
+	local ctx = get_ctx_by_filename(filename)
+	load_extra_files(filename)
 
-	local result = ctx:complete_at(source, row, col)
+	local result = ctx:complete_at(filename, source, row, col)
 	if not result then
 		write_line("%d", 0)
 	else
@@ -129,11 +166,11 @@ end
 
 
 local function main()
-	write_err("inspire start service:")
+	log_info("inspire start service:")
 	while true do
 		local ok, err = xpcall(dispatch, debug.traceback)
 		if not ok then
-			write_err("%s\n", err)
+			log_err("%s\n", err)
 			write_line("%d", 0)
 			stdout_fd:flush()
 		end
