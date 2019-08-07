@@ -632,7 +632,7 @@ function mt:complete_at(source, complete_row, complete_col)
     end
 
     local search_token_list = parser_complete_line(complete_line, complete_col)
-    if search_token_list and #search_token_list<= 8 then
+    if search_token_list and #search_token_list<= 32 then
         local up2_result = complete_up(self, search_token_list, complete_row, 2)
         local up8_result = complete_up(self, search_token_list, complete_row, 8)
         local up32_result = complete_up(self, search_token_list, complete_row, 32)
