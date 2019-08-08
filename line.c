@@ -40,7 +40,7 @@ read_id(const char* s, size_t b, size_t e) {
     int read_count = 0;
     size_t i;
     for(i=b; i<e; i++) {
-        char c = s[i];
+        unsigned char c = (unsigned char)s[i];
         char ct = ctype(c);
         if(ct == 'A' || ct == 'N') {
             read_count++;
