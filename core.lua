@@ -189,6 +189,8 @@ local function delete_patt(self, patt, del_count)
             tk = tk - 1
             if tk <= 0 then
                 self.alpha_tokens[patt_value] = nil
+            else
+                self.alpha_tokens[patt_value] = tk
             end
         end
 
