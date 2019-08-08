@@ -246,12 +246,19 @@ local function _search_layer_by_value(self, cur_layer_index, search_token)
         return
     end
 
+    local any_result = {}
     local result = {}
     for k, layer_token in pairs(cur_layer) do
         local search_value = search_token.value
         if layer_token.ttype == search_token.ttype and _substr(layer_token.value, search_value) then
             result[#result+1] = layer_token
+        elseif search_token.ttype == "A" and layer_token.any == true then
+            any_result[#any_result+1] = layer_token
         end
+    end
+
+    for i,v in ipairs(any_result) do
+        result[#result+1] = v
     end
     return result
 end
