@@ -359,9 +359,13 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
         return
     end
 
-    -- print("_complete!!!!! layer_token", layer_token.key, layer_token.value)
     -- is final match
     local cur_search_token = search_token_list[search_token_index]
+    -- print("_complete layer_token", layer_token.key, layer_token.value, 
+    --     "cur_layer_index", cur_layer_index, 
+    --     "cur_search_token", cur_search_token and cur_search_token.key,
+    --     "search_token_index", search_token_index)
+
     if not cur_search_token then
         -- print("gen_complete!!!!", layer_token.value, layer_token.key)
         gen_complete(self, cur_layer_index, layer_token, search_token_list, root_layer_path, result, match_score)
@@ -405,10 +409,14 @@ local function _complete(self, cur_layer_index, layer_token, search_token_list, 
         for i,next_layer_token in ipairs(ttype_match_list) do
             local next_layer2 = self.root[cur_layer_index+2]
             local next_child = next_layer_token.child
+            local next_search_token = search_token_list[search_token_index+1]
+            local next_skey = next_search_token and next_search_token.key
             root_layer_path[cur_root_layer_path_index+1] = "*"
             for k,v in pairs(next_child) do
                 local next_layer_token2 = next_layer2[k]
-                if next_layer_token2.count >= 2 and check_path(root_layer_path, next_layer_token2.paths, 2) then
+                if next_layer_token2.key == next_skey and 
+                    next_layer_token2.count >= 2 and 
+                    check_path(root_layer_path, next_layer_token2.paths, 2) then
                     ttype_match_map[k] = next_layer_token2
                 end
             end
