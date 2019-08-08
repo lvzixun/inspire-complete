@@ -628,7 +628,6 @@ function mt:complete_at(file_name, source, complete_row, complete_col)
     assert(complete_row)
     local complete_line = resolve_diff(self, file_name, source, complete_row)
     assert(complete_line)
-    local result_map = {}
     complete_col = complete_col or #complete_line
 
     local result = {}
