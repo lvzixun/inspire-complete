@@ -1,8 +1,47 @@
+local new_trie = require "trie"
 local line = require "line.c"
 local shape_token = line.shape_token
 -- local print_r = require "print_r"
 local M = {}
 local mt = {}
+local alpha_mt = {}
+
+local function new_alpha()
+    local raw = {
+        tokens_map = {},
+        trie = new_trie(),
+    }
+    return setmetatable(raw, {__index = alpha_mt})
+end
+
+function alpha_mt:insert(str)
+    local ref = self.tokens_map[str] or 0
+    if ref == 0 then
+        self.trie:insert(str)
+    end
+
+    ref = ref + 1
+    self.tokens_map[str] = ref
+end
+
+function alpha_mt:delete(str)
+    local ref = self.tokens_map[str]
+    if ref then
+        ref = ref - 1
+        assert(ref >= 0)
+        if ref <= 0 then
+            self.tokens_map[str] = nil
+            self.trie:delete(str)
+        else
+            self.tokens_map[str] = ref
+        end
+    end
+end
+
+
+function alpha_mt:search(prefix)
+    return self.trie:search(prefix)
+end
 
 
 local function gen_patt_token_key(patt_token)
@@ -134,8 +173,7 @@ local function insert_patt(self, patt)
         local path = patt_token.path
         patt_token.path = nil
         if ttype == "A" then
-            local tk = self.alpha_tokens[patt_token.value] or 0
-            self.alpha_tokens[patt_token.value] = tk + 1
+            self.alpha_tokens:insert(patt_token.value)
         end
         if not layer_token then
             layer_token = patt_token
@@ -184,14 +222,7 @@ local function delete_patt(self, patt, del_count)
         local layer_token = cur_layer[key]
         layer_token.count = layer_token.count - del_count
         if patt_token.ttype == "A" then
-            local tk = self.alpha_tokens[patt_value]
-            assert(tk)
-            tk = tk - 1
-            if tk <= 0 then
-                self.alpha_tokens[patt_value] = nil
-            else
-                self.alpha_tokens[patt_value] = tk
-            end
+            self.alpha_tokens:delete(patt_value)
         end
 
         delete_paths(layer_token.paths, patt_token.path, del_count)
@@ -590,11 +621,7 @@ local function complete_tokens(self, last_patt_token)
     local list = {}
     if last_patt_token.ttype == "A" then
         local patt_value = last_patt_token.value
-        for k,v in pairs(self.alpha_tokens) do
-            if _substr(k, patt_value) then
-                table.insert(list, k)
-            end
-        end
+        return self.alpha_tokens:search(patt_value)
     end
     return list
 end
@@ -683,7 +710,7 @@ function M.new_context()
     local raw = {
         root = {},
         loaded = {},
-        alpha_tokens = {},
+        alpha_tokens = new_alpha(),
     }
     local obj = setmetatable(raw, {__index = mt})
     return obj
