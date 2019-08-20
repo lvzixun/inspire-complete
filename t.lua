@@ -63,7 +63,8 @@ end
 
 local function test_complete(complete_line, row, col)
 	local source, row = insert_source(source, complete_line, row)
-    local result = ctx:complete_at(source, row, col)
+    col = col or #complete_line
+    local result = ctx:complete_at("test", source, row, col)
     print("---------- complete_line:", complete_line)
     if result then
         print_r(result)
